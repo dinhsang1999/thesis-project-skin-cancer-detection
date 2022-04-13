@@ -12,27 +12,13 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import top_k_accuracy_score,roc_auc_score, accuracy_score, precision_score,recall_score,f1_score,classification_report,balanced_accuracy_score,confusion_matrix
 from warmup_scheduler import GradualWarmupScheduler # https://github.com/ildoonet/pytorch-gradual-warmup-lr
 
-
-class GradualWarmupSchedulerV2(GradualWarmupScheduler):
-    def __init__(self, optimizer, multiplier, total_epoch, after_scheduler=None):
-        super(GradualWarmupSchedulerV2, self).__init__(optimizer, multiplier, total_epoch, after_scheduler)
-    def get_lr(self):
-        if self.last_epoch > self.total_epoch:
-            if self.after_scheduler:
-                if not self.finished:
-                    self.after_scheduler.base_lrs = [base_lr * self.multiplier for base_lr in self.base_lrs]
-                    self.finished = True
-                return self.after_scheduler.get_lr()
-            return [base_lr * self.multiplier for base_lr in self.base_lrs]
-        if self.multiplier == 1.0:
-            return [base_lr * (float(self.last_epoch) / self.total_epoch) for base_lr in self.base_lrs]
-        else:
-            return [base_lr * ((self.multiplier - 1.) * self.last_epoch / self.total_epoch + 1.) for base_lr in self.base_lrs]
-
 def get_item():
+    '''
+        Initial variables for training
+    '''
     parser = argparse.ArgumentParser()
     #folder
-    parser.add_argument('--data-dir', type=str, default="/mnt/data_lab513/dhsang/data/256x256")
+    parser.add_argument('--data-dir', type=str, default="/mnt/data_lab513/dhsang/data/768x768")
     parser.add_argument('--test-dir', type=str, default="/mnt/data_lab513/dhsang/data_2020/archive/test")
     parser.add_argument('--data-folder', type=int, default=256)
     parser.add_argument('--csv-dir', type=str, default="csvfile/full_train.csv")
@@ -40,7 +26,7 @@ def get_item():
     parser.add_argument('--type-save',type=str, default='checkpoint') #'checkpoint' & 'full_save'
     #hyperparameter
     parser.add_argument('--n-epochs', type=int, default=20)
-    parser.add_argument('--batch-size', type=int, default=30)
+    parser.add_argument('--batch-size', type=int, default=5)
     parser.add_argument('--lr', type=float, default=3e-5)
     parser.add_argument('--optimizer', type=str, default="adam")
     parser.add_argument('--weight-decay',type=float,default=0)
@@ -52,17 +38,17 @@ def get_item():
     parser.add_argument('--n-network', type=int, default=2)
     parser.add_argument('--network-1', type=str, default="efficientnet_b2")
     parser.add_argument('--network-2', type=str, default="resnet101")
-    parser.add_argument('--network', type=str, default="efficientnet_b0")
+    parser.add_argument('--network', type=str, default="efficientnet_b2")
     #dataset
     parser.add_argument('--test-size', type=float, default=0)
     #initial hardware
     parser.add_argument('--num-workers', type=int, default=16)
     parser.add_argument('--CUDA_VISIBLE_DEVICES', type=str, default='2')
     #others
-    parser.add_argument('--trial', type=str, default="8-stacking") #FIXME: 
+    parser.add_argument('--trial', type=str, default="test") #FIXME: #'test' for checking workflow of code
     parser.add_argument('--architecture', type=str, default="custom-stacking")
     parser.add_argument('--start-from', type=int, default=0)
-    parser.add_argument('--image-size', type=int, default=128)
+    parser.add_argument('--image-size', type=int, default=256)
     parser.add_argument('--rescale', type=int, default=None)
     parser.add_argument('--ignore-warnings', action='store_false')
     parser.add_argument('--grad-norm', action='store_true')
@@ -71,7 +57,7 @@ def get_item():
     parser.add_argument('--log-dir', type=str, default='./log')
     #metadata
     ##Note: n-network == 2
-    parser.add_argument('--use-meta', action='store_true')
+    parser.add_argument('--use-meta', action='store_false')
     parser.add_argument('--n-meta-dim', type=str, default='512,128')
     parser.add_argument('--out-dim', type=int, default=9)
     parser.add_argument('--n-meta-features', type=int, default=20)
@@ -82,6 +68,16 @@ def get_item():
 
 
 def preprocess_csv(csv_dir,test_size=0,mode="train"):
+    '''
+    Args:
+        csv_dir (String): path to the directory
+        test_size (float 0-1): spliting train & test size
+        mode (String):
+            -"train": Using all data
+            -"test": Checking code and workflow, run code faster
+    Returns:
+        Dataframe of train dataset || test dataset        
+    '''
     url_dataframe = pd.read_csv(csv_dir)
 
     url_dataframe['diagnosis']  = url_dataframe['diagnosis'].apply(lambda x: x.replace('MEL', '0'))
@@ -125,9 +121,8 @@ def preprocess_csv(csv_dir,test_size=0,mode="train"):
 
         df_train = pd.concat([df_0_train,df_1_train,df_2_train,df_3_train,df_4_train,df_5_train,df_6_train,df_7_train,df_8_train])
         df_test = pd.concat([df_0_test,df_1_test,df_2_test,df_3_test,df_4_test,df_5_test,df_6_test,df_7_test,df_8_test])
-
         return df_train,df_test
- 
+
     return url_dataframe
 
 def calculate_metrics(out_gt, out_pred):
@@ -143,8 +138,11 @@ def calculate_metrics(out_gt, out_pred):
         precision (float)   : Precision
         recall (float)      : Recall
         f1_score (float)    : F1 Score
-        sensitivity (float) : Sensitivity
-        specificity (float) : Specificity
+        report: table performance of training
+        auc_score: AUC core
+        balance_acc: Avarage accuracy of all classes
+        acc_each_class: accuracy of each class
+        top_2,top_3,...: top_k accuracy
 
     """
     y_true = out_gt.cpu().detach().numpy()
@@ -176,6 +174,9 @@ def calculate_metrics(out_gt, out_pred):
     return accuracy, precision, recall, f1,auc_score,report,balance_accuracy,acc_each_class,top_2_acc,top_3_acc,top_4_acc,top_5_acc
 
 def set_seed(seed=0):
+    '''
+    Seed for randomize
+    '''
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -183,7 +184,14 @@ def set_seed(seed=0):
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
 
-def calc_avg_mean_std(image_path, size):
+def calc_avg_mean_std(image_path):
+    '''
+    Agrs:
+        image_path: path of image
+    Return:
+        std: standard deviation
+        mean: mean of the image
+    '''
     img = cv2.imread(image_path)
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     mean, std = cv2.meanStdDev(img)
@@ -196,6 +204,26 @@ def blockPrint():
 # Restore
 def enablePrint():
     sys.stdout = sys.__stdout__
+
+
+class GradualWarmupSchedulerV2(GradualWarmupScheduler):
+    '''
+        Calculate learning_rate each epoch
+    '''
+    def __init__(self, optimizer, multiplier, total_epoch, after_scheduler=None):
+        super(GradualWarmupSchedulerV2, self).__init__(optimizer, multiplier, total_epoch, after_scheduler)
+    def get_lr(self):
+        if self.last_epoch > self.total_epoch:
+            if self.after_scheduler:
+                if not self.finished:
+                    self.after_scheduler.base_lrs = [base_lr * self.multiplier for base_lr in self.base_lrs]
+                    self.finished = True
+                return self.after_scheduler.get_lr()
+            return [base_lr * self.multiplier for base_lr in self.base_lrs]
+        if self.multiplier == 1.0:
+            return [base_lr * (float(self.last_epoch) / self.total_epoch) for base_lr in self.base_lrs]
+        else:
+            return [base_lr * ((self.multiplier - 1.) * self.last_epoch / self.total_epoch + 1.) for base_lr in self.base_lrs]
 
 
 if __name__ == '__main__':
