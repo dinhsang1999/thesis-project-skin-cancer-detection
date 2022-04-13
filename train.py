@@ -237,9 +237,15 @@ def set_up_training():
     return model, optimizer, loss_fn, device,scaler
 
 def dataset():
-    df_train = preprocess_csv(csv_dir=args.csv_dir,test_size=args.test_size,mode=args.trial)
-    df_train = df_train.reset_index(drop=True)
-
+    if args.test_size != 0:
+        df_train,df_test = preprocess_csv(csv_dir=args.csv_dir,test_size=args.test_size,mode=args.trial)
+        df_train = df_train.reset_index(drop=True)
+        df_test = df_test.reset_index(drop=True)
+        df_test.to_csv('./test_data_split/test_dict.csv',index=False)
+    else:
+        df_train = preprocess_csv(csv_dir=args.csv_dir,test_size=args.test_size,mode=args.trial)
+        df_train = df_train.reset_index(drop=True)
+    
     if args.use_meta:
         meta_feature = ['sex','age_approx','width','height'] + [col for col in df_train.columns[11:27]]
         _input = []

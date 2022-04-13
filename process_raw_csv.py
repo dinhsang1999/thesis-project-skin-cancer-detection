@@ -3,21 +3,22 @@ import os
 import cv2
 from tqdm import tqdm
 
-rawCSV_path = "./csvfile/train.csv" #FIXME:
+
+rawCSV_path = "./csvfile/test.csv" #FIXME:
 url_dataframe = pd.read_csv(rawCSV_path)
 url_dataframe["image_name"] = [str(x) + ".jpg" for x in url_dataframe["image_name"]]
-url_dataframe['diagnosis']  = url_dataframe['diagnosis'].apply(lambda x: x.replace('seborrheic keratosis', 'BKL'))
-url_dataframe['diagnosis']  = url_dataframe['diagnosis'].apply(lambda x: x.replace('lichenoid keratosis', 'BKL'))
-url_dataframe['diagnosis']  = url_dataframe['diagnosis'].apply(lambda x: x.replace('solar lentigo', 'BKL'))
-url_dataframe['diagnosis']  = url_dataframe['diagnosis'].apply(lambda x: x.replace('lentigo NOS', 'BKL'))
-url_dataframe['diagnosis']  = url_dataframe['diagnosis'].apply(lambda x: x.replace('cafe-au-lait macule', 'unknown'))
-url_dataframe['diagnosis']  = url_dataframe['diagnosis'].apply(lambda x: x.replace('atypical melanocytic proliferation', 'unknown'))
+# url_dataframe['diagnosis']  = url_dataframe['diagnosis'].apply(lambda x: x.replace('seborrheic keratosis', 'BKL'))
+# url_dataframe['diagnosis']  = url_dataframe['diagnosis'].apply(lambda x: x.replace('lichenoid keratosis', 'BKL'))
+# url_dataframe['diagnosis']  = url_dataframe['diagnosis'].apply(lambda x: x.replace('solar lentigo', 'BKL'))
+# url_dataframe['diagnosis']  = url_dataframe['diagnosis'].apply(lambda x: x.replace('lentigo NOS', 'BKL'))
+# url_dataframe['diagnosis']  = url_dataframe['diagnosis'].apply(lambda x: x.replace('cafe-au-lait macule', 'unknown'))
+# url_dataframe['diagnosis']  = url_dataframe['diagnosis'].apply(lambda x: x.replace('atypical melanocytic proliferation', 'unknown'))
 
 url_dataframe['sex'] = (url_dataframe['sex'].values == 'male')*1
 url_dataframe['age_approx'] = url_dataframe['age_approx'].fillna(url_dataframe['age_approx'].mean())
 url_dataframe['age_approx'] = url_dataframe['age_approx'] / url_dataframe['age_approx'].values.max()
 url_dataframe['anatom_site_general_challenge'] = url_dataframe['anatom_site_general_challenge'].fillna('unknown')
-url_dataframe['diagnosis'] =  url_dataframe['diagnosis'].fillna('unknown')
+# url_dataframe['diagnosis'] =  url_dataframe['diagnosis'].fillna('unknown')
 url_dataframe['width'] = url_dataframe['width'].fillna(url_dataframe['width'].mean())
 url_dataframe['width'] = url_dataframe['width'] / url_dataframe['width'].values.max()
 
@@ -125,6 +126,6 @@ url_dataframe['std_2'] = std_2
 url_dataframe['std_3'] = std_3
 
 df = pd.DataFrame(url_dataframe)
-df.to_csv('csvfile/a.csv',index=False)
+df.to_csv('csvfile/full_test.csv',index=False)
 
 
