@@ -30,6 +30,7 @@ def epoch_train(dataloader, model, loss_fn, device,optimizer,scaler,use_meta,max
         if use_meta:
             data, meta = X
             data,meta,y = data.to(device),meta.to(device),y.to(device)
+            
             with torch.cuda.amp.autocast():
                 pred = model(data.float(),meta.float())
                 loss = loss_fn(pred, y)
