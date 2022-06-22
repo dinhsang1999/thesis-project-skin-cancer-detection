@@ -59,13 +59,14 @@ def epoch_train(dataloader, model, loss_fn, device,optimizer,scaler,use_meta,max
             out_pred = torch.cat((out_pred, pred), 0)
             y = y.type(torch.long)        
             train_loss += loss.item()
+            # print(train_loss),exit()
 
         # correct += (pred.argmax(1) == y).type(torch.float).sum().item()
         # total_train += y.nelement()
         # train_accuracy = 100. * correct / total_train
         # print('\tTraining batch {} Loss: {:.6f}, Accurancy:{:.3f}%'.format(
         #         batch + 1, loss.item(), train_accuracy))
-    accuracy, precision, recall, f1,auc_score,report,balance_accuracy,acc_each_class,_,_,_,_ = calculate_metrics(
+    accuracy, precision, recall, f1,auc_score,report,balance_accuracy,acc_each_class,_,_,_,_,_,_,sensitivity,specificity = calculate_metrics(
             out_gt, out_pred)
         
     print('Training set: Average loss: {:.6f}, Average accuracy: ({:.3f}%)\n'.format(
@@ -75,7 +76,7 @@ def epoch_train(dataloader, model, loss_fn, device,optimizer,scaler,use_meta,max
 
     lr = optimizer.param_groups[0]["lr"] 
 
-    return accuracy,total_loss, precision, recall, f1,auc_score,report,balance_accuracy,acc_each_class,lr
+    return accuracy,total_loss, precision, recall, f1,auc_score,report,balance_accuracy,acc_each_class,lr,out_gt,out_pred,sensitivity,specificity
 
 
 
@@ -91,7 +92,7 @@ def epoch_evaluate(dataloader, model, loss_fn, device,use_meta):
         device (str): Device for training (GPU or CPU)
         epoch (int): Number of epochs
     """
-    out_pred = torch.FloatTensor().to(device)
+    out_pred = torch.FloatTensor().to(device) #ToDO del.to(device)
     out_gt = torch.IntTensor().to(device)
 
     val_loss = 0
@@ -118,9 +119,9 @@ def epoch_evaluate(dataloader, model, loss_fn, device,use_meta):
             correct += (pred.argmax(1) == y).type(torch.float).sum().item()
     
     avg_loss = val_loss/ batch_count
-    accuracy, precision, recall, f1,auc_score,report,balance_accuracy,acc_each_class,top_2_acc,top_3_acc,top_4_acc,top_5_acc = calculate_metrics(
+    accuracy, precision, recall, f1,auc_score,report,balance_accuracy,acc_each_class,top_2_acc,top_3_acc,top_4_acc,top_5_acc,top_2_accuracy_score_inclass,top_3_accuracy_score_inclass,sensitivity,specificity = calculate_metrics(
     out_gt, out_pred)
 
     print('Validation set: Average loss: {:.6f}, Average accuracy:({:.3f}%)\n'.format(avg_loss,100.* accuracy))
 
-    return accuracy,avg_loss, precision, recall, f1,auc_score,report,balance_accuracy,acc_each_class,top_2_acc,top_3_acc,top_4_acc,top_5_acc
+    return accuracy,avg_loss, precision, recall, f1,auc_score,report,balance_accuracy,acc_each_class,top_2_acc,top_3_acc,top_4_acc,top_5_acc,out_gt,out_pred,top_2_accuracy_score_inclass,top_3_accuracy_score_inclass,sensitivity,specificity 

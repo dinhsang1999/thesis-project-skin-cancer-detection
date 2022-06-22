@@ -4,6 +4,7 @@ import torch
 import json
 import warnings
 import pandas as pd
+import numpy as np
 from torch import nn
 from tqdm import tqdm
 
@@ -21,23 +22,51 @@ from torch.utils.data import DataLoader
 def cross_validate():
     set_fold = StratifiedKFold(n_splits=args.n_folds, shuffle=True, random_state = 69)
     X_,y_ = dataset()
+    first_epoch = True
 
     for k_fold, (train_ids, val_ids) in enumerate (set_fold.split(X_,y_)):
-        if k_fold < args.start_from: 
+
+        if ((args.train_k_fold_and_stop != 0) and (k_fold !=0)):
+            if k_fold - (args.train_k_fold_and_stop+args.start_from_fold) == 0:
+                print(f'Stop here!! I just train {args.train_k_fold_and_stop} fold by your set up')
+                exit()
+
+        print('Current fold = ',str(k_fold))
+        if (k_fold < args.start_from_fold) and (args.start_from_fold != 0): 
             continue
         trainloader, valloader = set_up_training_for_cross_validation(train_ids,val_ids,X_,y_)
-        model, optimizer, loss_fn, device, scaler = set_up_training()
+        model, optimizer, loss_fn, device, scaler = set_up_training(first_epoch)
 
         scheduler_cosine = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, args.n_epochs - 1)
         scheduler_warmup = GradualWarmupSchedulerV2(optimizer, multiplier=10, total_epoch=1, after_scheduler=scheduler_cosine)
 
         writer_fold = SummaryWriter(os.path.join(args.log_dir,"trial_"+ args.trial,"fold_" +str(k_fold)))
         saved_model_path = os.path.join(args.model_save,"trial_" + args.trial,"fold_" + str(k_fold) + ".pth")
-
+        saved_output_pred_train_path = os.path.join("/mnt/data_lab513/dhsang/output","trial_" + args.trial,"train","fold_" + str(k_fold) + "_pred" + ".pt")
+        saved_output_gt_train_path = os.path.join("/mnt/data_lab513/dhsang/output","trial_" + args.trial,"train","fold_" + str(k_fold) + "_gt" + ".pt")
+        saved_output_pred_evaluate_path = os.path.join("/mnt/data_lab513/dhsang/output","trial_" + args.trial,"evaluate","fold_" + str(k_fold) + "_pred" + ".pt")
+        saved_output_gt_evaluate_path = os.path.join("/mnt/data_lab513/dhsang/output","trial_" + args.trial,"evaluate","fold_" + str(k_fold) + "_gt" + ".pt")
         best_acc = 0
+        pred_full_train_save = []
+        gt_full_train_save = []
+        pred_full_evaluate_save = []
+        gt_full_evaluate_save = []
 
         for epoch in range(args.n_epochs):
-            acc_train,loss_train, prec_train, recall_train, f1_train,auc_train,report_train,bal_acc_train,acc_each_class_train,lr =  epoch_train(trainloader,model,loss_fn,device,optimizer,scaler,args.use_meta,args.max_norm)
+
+            print('Current epoch = ',str(epoch))
+
+            if epoch == args.start_from_epoch:
+                first_epoch = False
+
+            if (epoch < args.start_from_epoch) and (args.start_from_epoch != 0) and (first_epoch == True):
+                continue
+
+            ### TRAIN
+            acc_train,loss_train, prec_train, recall_train, f1_train,auc_train,report_train,bal_acc_train,acc_each_class_train,lr,out_gt_train,out_pred_train,sensitivity,specificity =  epoch_train(trainloader,model,loss_fn,device,optimizer,scaler,args.use_meta,args.max_norm)
+
+            pred_full_train_save.append(out_pred_train)
+            gt_full_train_save.append(out_gt_train)
 
             if args.scheduler:
                 scheduler_warmup.step()
@@ -93,9 +122,37 @@ def cross_validate():
             writer_fold.add_scalar("f1_DF/train", report_train.get('7').get('f1-score'), epoch)
             writer_fold.add_scalar("f1_Unknow/train", report_train.get('8').get('f1-score'), epoch)
 
+            writer_fold.add_scalar("sensitivity_MEL/train", sensitivity[0], epoch)
+            writer_fold.add_scalar("sensitivity_NV/train", sensitivity[1], epoch)
+            writer_fold.add_scalar("sensitivity_BCC/train", sensitivity[2], epoch)
+            writer_fold.add_scalar("sensitivity_BKL/train",sensitivity[3], epoch)
+            writer_fold.add_scalar("sensitivity_AK/train",sensitivity[4], epoch)
+            writer_fold.add_scalar("sensitivity_SCC/train", sensitivity[5], epoch)
+            writer_fold.add_scalar("sensitivity_VASC/train", sensitivity[6], epoch)
+            writer_fold.add_scalar("sensitivity_DF/train", sensitivity[7], epoch)
+            writer_fold.add_scalar("sensitivity_Unknow/train", sensitivity[8], epoch)
+
+            writer_fold.add_scalar("specificity_MEL/train", specificity[0], epoch)
+            writer_fold.add_scalar("specificity_NV/train", specificity[1], epoch)
+            writer_fold.add_scalar("specificity_BCC/train", specificity[2], epoch)
+            writer_fold.add_scalar("specificity_BKL/train",specificity[3], epoch)
+            writer_fold.add_scalar("specificity_AK/train",specificity[4], epoch)
+            writer_fold.add_scalar("specificity_SCC/train", specificity[5], epoch)
+            writer_fold.add_scalar("specificity_VASC/train", specificity[6], epoch)
+            writer_fold.add_scalar("specificity_DF/train", specificity[7], epoch)
+            writer_fold.add_scalar("specificity_Unknow/train", specificity[8], epoch)
+
+            writer_fold.add_scalar("specificity/train", np.mean(specificity), epoch)
+            writer_fold.add_scalar("sensitivity/train", np.mean(sensitivity), epoch)
+
+
             writer_fold.add_scalar("learning_rate", lr, epoch)
 
-            acc_test,loss_test, prec_test, recall_test, f1_test,auc_test,report_test,bal_acc_test,acc_each_class_test,top_2_acc,top_3_acc,top_4_acc,top_5_acc =  epoch_evaluate(valloader,model,loss_fn,device,args.use_meta)
+            ### EVALUATE
+            acc_test,loss_test, prec_test, recall_test, f1_test,auc_test,report_test,bal_acc_test,acc_each_class_test,top_2_acc,top_3_acc,top_4_acc,top_5_acc,out_gt_eval,out_pred_eval,top_2_accuracy_score_inclass,top_3_accuracy_score_inclass,sensitivity,specificity =  epoch_evaluate(valloader,model,loss_fn,device,args.use_meta)
+
+            pred_full_evaluate_save.append(out_pred_eval)
+            gt_full_evaluate_save.append(out_gt_eval)
 
             writer_fold.add_scalar("AUC/test", auc_test, epoch)
             writer_fold.add_scalar("Loss/test", loss_test, epoch)
@@ -151,6 +208,50 @@ def cross_validate():
             writer_fold.add_scalar("top_4_acc/test", top_4_acc, epoch)
             writer_fold.add_scalar("top_5_acc/test", top_5_acc, epoch)
 
+            writer_fold.add_scalar("top_2_acc_inclass_MEL/test", top_2_accuracy_score_inclass[0], epoch)
+            writer_fold.add_scalar("top_2_acc_inclass_NV/test", top_2_accuracy_score_inclass[1], epoch)
+            writer_fold.add_scalar("top_2_acc_inclass_BCC/test", top_2_accuracy_score_inclass[2], epoch)
+            writer_fold.add_scalar("top_2_acc_inclass_BKL/test", top_2_accuracy_score_inclass[3], epoch)
+            writer_fold.add_scalar("top_2_acc_inclass_AK/test", top_2_accuracy_score_inclass[4], epoch)
+            writer_fold.add_scalar("top_2_acc_inclass_SCC/test", top_2_accuracy_score_inclass[5], epoch)
+            writer_fold.add_scalar("top_2_acc_inclass_VASC/test", top_2_accuracy_score_inclass[6], epoch)
+            writer_fold.add_scalar("top_2_acc_inclass_DF/test", top_2_accuracy_score_inclass[7], epoch)
+            writer_fold.add_scalar("top_2_acc_inclass_Unknow/test", top_2_accuracy_score_inclass[8], epoch)
+
+            writer_fold.add_scalar("top_3_acc_inclass_MEL/test", top_3_accuracy_score_inclass[0], epoch)
+            writer_fold.add_scalar("top_3_acc_inclass_NV/test", top_3_accuracy_score_inclass[1], epoch)
+            writer_fold.add_scalar("top_3_acc_inclass_BCC/test", top_3_accuracy_score_inclass[2], epoch)
+            writer_fold.add_scalar("top_3_acc_inclass_BKL/test", top_3_accuracy_score_inclass[3], epoch)
+            writer_fold.add_scalar("top_3_acc_inclass_AK/test", top_3_accuracy_score_inclass[4], epoch)
+            writer_fold.add_scalar("top_3_acc_inclass_SCC/test", top_3_accuracy_score_inclass[5], epoch)
+            writer_fold.add_scalar("top_3_acc_inclass_VASC/test", top_3_accuracy_score_inclass[6], epoch)
+            writer_fold.add_scalar("top_3_acc_inclass_DF/test", top_3_accuracy_score_inclass[7], epoch)
+            writer_fold.add_scalar("top_3_acc_inclass_Unknow/test", top_3_accuracy_score_inclass[8], epoch)
+
+            writer_fold.add_scalar("sensitivity_MEL/test", sensitivity[0], epoch)
+            writer_fold.add_scalar("sensitivity_NV/test", sensitivity[1], epoch)
+            writer_fold.add_scalar("sensitivity_BCC/test", sensitivity[2], epoch)
+            writer_fold.add_scalar("sensitivity_BKL/test",sensitivity[3], epoch)
+            writer_fold.add_scalar("sensitivity_AK/test",sensitivity[4], epoch)
+            writer_fold.add_scalar("sensitivity_SCC/test", sensitivity[5], epoch)
+            writer_fold.add_scalar("sensitivity_VASC/test", sensitivity[6], epoch)
+            writer_fold.add_scalar("sensitivity_DF/test", sensitivity[7], epoch)
+            writer_fold.add_scalar("sensitivity_Unknow/test", sensitivity[8], epoch)
+
+            writer_fold.add_scalar("specificity_MEL/test", specificity[0], epoch)
+            writer_fold.add_scalar("specificity_NV/test", specificity[1], epoch)
+            writer_fold.add_scalar("specificity_BCC/test", specificity[2], epoch)
+            writer_fold.add_scalar("specificity_BKL/test",specificity[3], epoch)
+            writer_fold.add_scalar("specificity_AK/test",specificity[4], epoch)
+            writer_fold.add_scalar("specificity_SCC/test", specificity[5], epoch)
+            writer_fold.add_scalar("specificity_VASC/test", specificity[6], epoch)
+            writer_fold.add_scalar("specificity_DF/test", specificity[7], epoch)
+            writer_fold.add_scalar("specificity_Unknow/test", specificity[8], epoch)
+
+            writer_fold.add_scalar("specificity/test", np.mean(specificity), epoch)
+            writer_fold.add_scalar("sensitivity/test", np.mean(sensitivity), epoch)
+
+
 
             if args.type_save == 'checkpoint':
                 if acc_test > best_acc:
@@ -162,6 +263,15 @@ def cross_validate():
             elif args.type_save == 'full_save':
                 torch.save(model.state_dict(), args.model_save+"last-model" + ".pth")
             else: raise ValueError("Check type-save!!!")
+
+            torch.save(model.state_dict(), "/mnt/data_lab513/dhsang/model/temp/cnt_model.pth")
+
+
+        
+        torch.save(pred_full_train_save, saved_output_pred_train_path)
+        torch.save(gt_full_train_save, saved_output_gt_train_path)
+        torch.save(pred_full_evaluate_save, saved_output_pred_evaluate_path)
+        torch.save(gt_full_evaluate_save,saved_output_gt_evaluate_path)
 
 
 def set_up_training_for_cross_validation(train_ids,val_ids,datatrain,target):
@@ -201,42 +311,55 @@ def set_up_training_for_cross_validation(train_ids,val_ids,datatrain,target):
     
     return train_dataloader,val_dataloader
 
-def set_up_training():
+def set_up_training(first_epoch=False):
     if args.n_network == 2:
+        print('Use 2 network combine')
         if args.use_meta:
+            print('Use Metadata')
             model = MetaMelanoma(out_dim=args.out_dim,n_meta_features=args.n_meta_features,n_meta_dim=[int(nd) for nd in args.n_meta_dim.split(',')],network=args.network)
         else:
+            print('Use Stacking Model')
             model = MelanomaNet(network_1=args.network_1,network_2=args.network_2)
     elif args.n_network == 1:
+        print('Use BaseModel:',args.network)
         model = BaseNetwork(network=args.network)
     else:
         raise ValueError("Wrong choose model within set_up_training!!!")
         
     if args.optimizer == "adam":
-            optimizer = torch.optim.Adam(
-                model.parameters(), lr=args.lr,weight_decay=args.weight_decay)
+        print('Use Adam')
+        optimizer = torch.optim.Adam(model.parameters(), lr=args.lr,weight_decay=args.weight_decay)
     elif args.optimizer == "sgd":
-            optimizer = torch.optim.SGD(
-                model.parameters(), lr=args.lr,weight_decay=args.weight_decay)
+        print('Use SGD')
+        optimizer = torch.optim.SGD(model.parameters(), lr=args.lr,weight_decay=args.weight_decay)
     else:
         raise ValueError("Wrong optimizer!!! within set_up_training")
 
     if args.CUDA_VISIBLE_DEVICES == "0":
+        print('Use CUDA=0')
         device = "cuda:0" if torch.cuda.is_available() else "cpu"
     elif args.CUDA_VISIBLE_DEVICES == "1":
+        print('Use CUDA=1')
         device = "cuda:1" if torch.cuda.is_available() else "cpu"
     elif args.CUDA_VISIBLE_DEVICES == "2":
+        print('Use CUDA=2-DataParllel')
         device = "cuda:0" if torch.cuda.is_available() else "cpu"
         model = nn.DataParallel(model,device_ids=[0,1])
     else:
         raise ValueError("Wrong choose cuda within set_up_training")
 
     scaler =  torch.cuda.amp.grad_scaler.GradScaler()
-    loss_fn = nn.CrossEntropyLoss().to(device)
+    loss_fn = nn.CrossEntropyLoss() #TODO: del .to(device)
     model.to(device)
+    if (args.start_from_epoch) != 0 and (first_epoch == True) and (args.start_from_fold !=0):
+        print('Skip fold and epoch')
+        path_model = "/mnt/data_lab513/dhsang/model/temp/cnt_model.pth"
+        model_loader = torch.load(path_model)
+        model.load_state_dict(model_loader)
     return model, optimizer, loss_fn, device,scaler
 
 def dataset():
+    print('Get Dataset!')
     if args.test_size != 0:
         df_train,df_test = preprocess_csv(csv_dir=args.csv_dir,test_size=args.test_size,mode=args.trial)
         df_train = df_train.reset_index(drop=True)
@@ -264,14 +387,18 @@ def dataset():
 
 if __name__ == '__main__':
     args = get_item()
+    os.makedirs("/mnt/data_lab513/dhsang/model/temp",exist_ok=True)
     os.makedirs("./trial_info",exist_ok=True)
     os.makedirs(os.path.join(args.model_save,"trial_" + args.trial),exist_ok=True)
+    os.makedirs(os.path.join("/mnt/data_lab513/dhsang/output","trial_" + args.trial,"train"),exist_ok=True)
+    os.makedirs(os.path.join("/mnt/data_lab513/dhsang/output","trial_" + args.trial,"evaluate"),exist_ok=True)
     save_info_path = os.path.join("./trial_info","trial_"+str(args.trial))
     with open(save_info_path+".txt", 'w') as f:
         json.dump(args.__dict__, f, indent=2)
     if args.ignore_warnings:
         warnings.filterwarnings("ignore")
     os.makedirs(args.log_dir, exist_ok=True)
+    print('SEED:',args.seed)
     set_seed(args.seed)
     cross_validate()
 
