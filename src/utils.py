@@ -11,6 +11,8 @@ import torch.nn.functional as F
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import top_k_accuracy_score,roc_auc_score, accuracy_score, precision_score,recall_score,f1_score,classification_report,balanced_accuracy_score,confusion_matrix
 from warmup_scheduler import GradualWarmupScheduler # https://github.com/ildoonet/pytorch-gradual-warmup-lr
+from src.topk import top_k_accuracy_score_inclass
+from src.ss import ss
 
 def get_item():
     '''
@@ -26,7 +28,7 @@ def get_item():
     parser.add_argument('--type-save',type=str, default='checkpoint') #'checkpoint' & 'full_save'
     #hyperparameter
     parser.add_argument('--n-epochs', type=int, default=20)
-    parser.add_argument('--batch-size', type=int, default=5)
+    parser.add_argument('--batch-size', type=int, default=30)
     parser.add_argument('--lr', type=float, default=3e-5)
     parser.add_argument('--optimizer', type=str, default="adam")
     parser.add_argument('--weight-decay',type=float,default=0)
@@ -35,29 +37,35 @@ def get_item():
     parser.add_argument('--max-norm',type=float,default=0)
     #network
     #FIXME: Stacking model
-    parser.add_argument('--n-network', type=int, default=2)
+    parser.add_argument('--n-network', type=int, default=2) #TODO: and parser.add_argument('--use-meta', action='store_true')
     parser.add_argument('--network-1', type=str, default="efficientnet_b2")
     parser.add_argument('--network-2', type=str, default="resnet101")
-    parser.add_argument('--network', type=str, default="efficientnet_b2")
+    parser.add_argument('--network', type=str, default='tf_efficientnet_b2_ns')
     #dataset
     parser.add_argument('--test-size', type=float, default=0)
     #initial hardware
     parser.add_argument('--num-workers', type=int, default=16)
     parser.add_argument('--CUDA_VISIBLE_DEVICES', type=str, default='2')
     #others
-    parser.add_argument('--trial', type=str, default="test") #FIXME: #'test' for checking workflow of code
+    parser.add_argument('--trial', type=str, default="18") #FIXME: #'test' for checking workflow of code
     parser.add_argument('--architecture', type=str, default="custom-stacking")
-    parser.add_argument('--start-from', type=int, default=0)
-    parser.add_argument('--image-size', type=int, default=256)
-    parser.add_argument('--rescale', type=int, default=None)
+
+    parser.add_argument('--start-from-fold', type=int, default=0) #default = 0
+    parser.add_argument('--start-from-epoch', type=int, default=0) #default = 0
+
+    parser.add_argument('--train-k-fold-and-stop', type=int, default=1) #=0 if not use
+
+    parser.add_argument('--image-size', type=int, default=128)
+    parser.add_argument('--rescale', type=int, default=512)
     parser.add_argument('--ignore-warnings', action='store_false')
     parser.add_argument('--grad-norm', action='store_true')
+    parser.add_argument('--drop-metadata', type=str, default="true")
     #cross-validate
     parser.add_argument('--n-folds', type=int, default=5)
     parser.add_argument('--log-dir', type=str, default='./log')
     #metadata
     ##Note: n-network == 2
-    parser.add_argument('--use-meta', action='store_false')
+    parser.add_argument('--use-meta', action='store_false') #FIXME: = 'store_true' if n-network=1
     parser.add_argument('--n-meta-dim', type=str, default='512,128')
     parser.add_argument('--out-dim', type=int, default=9)
     parser.add_argument('--n-meta-features', type=int, default=20)
@@ -79,6 +87,8 @@ def preprocess_csv(csv_dir,test_size=0,mode="train"):
         Dataframe of train dataset || test dataset        
     '''
     url_dataframe = pd.read_csv(csv_dir)
+    url_dataframe = url_dataframe.drop('Unnamed: 0',axis = 1)
+    url_dataframe = url_dataframe.drop('Unnamed: 0.1',axis = 1)
 
     url_dataframe['diagnosis']  = url_dataframe['diagnosis'].apply(lambda x: x.replace('MEL', '0'))
     url_dataframe['diagnosis']  = url_dataframe['diagnosis'].apply(lambda x: x.replace('NV', '1'))
@@ -145,6 +155,9 @@ def calculate_metrics(out_gt, out_pred):
         top_2,top_3,...: top_k accuracy
 
     """
+    top_2_accuracy_score_inclass = top_k_accuracy_score_inclass(out_gt, out_pred, k=2)
+    top_3_accuracy_score_inclass = top_k_accuracy_score_inclass(out_gt, out_pred, k=3)
+
     y_true = out_gt.cpu().detach().numpy()
     out_gt = F.one_hot(out_gt,num_classes=9).float()
 
@@ -171,7 +184,9 @@ def calculate_metrics(out_gt, out_pred):
     matrix_dia = matrix_dia.astype('float') / matrix_dia.sum(axis=1)[:, np.newaxis]
     acc_each_class = matrix_dia.diagonal()
 
-    return accuracy, precision, recall, f1,auc_score,report,balance_accuracy,acc_each_class,top_2_acc,top_3_acc,top_4_acc,top_5_acc
+    sensitivity,specificity = ss(out_gt,out_pred)
+
+    return accuracy, precision, recall, f1,auc_score,report,balance_accuracy,acc_each_class,top_2_acc,top_3_acc,top_4_acc,top_5_acc,top_2_accuracy_score_inclass,top_3_accuracy_score_inclass,sensitivity,specificity
 
 def set_seed(seed=0):
     '''
