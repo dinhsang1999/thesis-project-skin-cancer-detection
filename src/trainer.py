@@ -3,7 +3,7 @@ import os
 from src.utils import calculate_metrics
 from tqdm import tqdm
 
-def epoch_train(dataloader, model, loss_fn, device,optimizer,scaler,use_meta,max_norm):
+def epoch_train(dataloader, model, loss_fn, device,optimizer,scaler,use_meta,max_norm,use_focal_loss=False):
     """
     Train the model one time (forward propagation, loss calculation,
         back propagation, update parameters)
@@ -19,8 +19,8 @@ def epoch_train(dataloader, model, loss_fn, device,optimizer,scaler,use_meta,max
     model.train()
 
     train_loss = 0
-    correct = 0
-    total_train=0
+    # correct = 0
+    # total_train=0
 
     out_pred = torch.FloatTensor().to(device)
     out_gt = torch.IntTensor().to(device)
@@ -33,6 +33,8 @@ def epoch_train(dataloader, model, loss_fn, device,optimizer,scaler,use_meta,max
             
             with torch.cuda.amp.autocast():
                 pred = model(data.float(),meta.float())
+                # if use_focal_loss:
+                    # y_fl = torch.nn.functional.one_hot(y,num_classes=9).float()
                 loss = loss_fn(pred, y)
             out_gt = torch.cat((out_gt, y), 0)
             out_pred = torch.cat((out_pred, pred), 0)
@@ -48,7 +50,9 @@ def epoch_train(dataloader, model, loss_fn, device,optimizer,scaler,use_meta,max
             X, y = X.to(device), y.to(device)
             with torch.cuda.amp.autocast():          
                 pred = model(X.float())
+                # y_fl = torch.nn.functional.one_hot(y,num_classes=9).float()
                 loss = loss_fn(pred, y)
+            
             scaler.scale(loss).backward()
             scaler.unscale_(optimizer)
             if max_norm != 0:
@@ -80,7 +84,7 @@ def epoch_train(dataloader, model, loss_fn, device,optimizer,scaler,use_meta,max
 
 
 
-def epoch_evaluate(dataloader, model, loss_fn, device,use_meta):
+def epoch_evaluate(dataloader, model, loss_fn, device,use_meta,use_focal_loss):
     """
     Evaluate the model one time (forward propagation, loss calculation)
 
@@ -108,10 +112,13 @@ def epoch_evaluate(dataloader, model, loss_fn, device,use_meta):
                 data, meta = X
                 data, meta, y = data.to(device), meta.to(device), y.to(device)
                 pred = model(data.float(),meta.float())
-                loss = loss_fn(pred, y)
+                
             else:
                 X, y = X.to(device), y.to(device)
                 pred = model(X.float())
+
+            # if use_focal_loss:
+            #     y_fl = torch.nn.functional.one_hot(y,num_classes=9).float()
 
             out_gt = torch.cat((out_gt, y), 0)
             out_pred = torch.cat((out_pred, pred), 0)

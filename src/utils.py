@@ -27,27 +27,32 @@ def get_item():
     parser.add_argument('--model-save', type=str, default="/mnt/data_lab513/dhsang/model/")
     parser.add_argument('--type-save',type=str, default='checkpoint') #'checkpoint' & 'full_save'
     #hyperparameter
-    parser.add_argument('--n-epochs', type=int, default=20)
+    parser.add_argument('--n-epochs', type=int, default=30)
     parser.add_argument('--batch-size', type=int, default=30)
-    parser.add_argument('--lr', type=float, default=3e-5)
+    parser.add_argument('--lr', type=float, default=4e-5)
     parser.add_argument('--optimizer', type=str, default="adam")
     parser.add_argument('--weight-decay',type=float,default=0)
     parser.add_argument('--seed', type=int, default=1)
     parser.add_argument('--scheduler', action='store_false')
     parser.add_argument('--max-norm',type=float,default=0)
+
+    #Loss
+    parser.add_argument('--use-focal-loss', action='store_true')
+    parser.add_argument('--fl-alpha',type=float,default=0.25)
+    parser.add_argument('--fl-gamma',type=float,default=2.0)
     #network
     #FIXME: Stacking model
     parser.add_argument('--n-network', type=int, default=2) #TODO: and parser.add_argument('--use-meta', action='store_true')
     parser.add_argument('--network-1', type=str, default="efficientnet_b2")
     parser.add_argument('--network-2', type=str, default="resnet101")
-    parser.add_argument('--network', type=str, default='tf_efficientnet_b2_ns')
+    parser.add_argument('--network', type=str, default="tf_efficientnet_b2_ns")
     #dataset
     parser.add_argument('--test-size', type=float, default=0)
     #initial hardware
     parser.add_argument('--num-workers', type=int, default=16)
     parser.add_argument('--CUDA_VISIBLE_DEVICES', type=str, default='2')
     #others
-    parser.add_argument('--trial', type=str, default="18") #FIXME: #'test' for checking workflow of code
+    parser.add_argument('--trial', type=str, default="35") #FIXME: #'test' for checking workflow of code
     parser.add_argument('--architecture', type=str, default="custom-stacking")
 
     parser.add_argument('--start-from-fold', type=int, default=0) #default = 0

@@ -17,7 +17,7 @@ from sklearn.model_selection import KFold, StratifiedKFold
 from torch.utils.tensorboard import SummaryWriter
 from torchvision.transforms import Lambda
 from torch.utils.data import DataLoader
-
+from focal_loss import FocalLoss
 
 def cross_validate():
     set_fold = StratifiedKFold(n_splits=args.n_folds, shuffle=True, random_state = 69)
@@ -31,9 +31,12 @@ def cross_validate():
                 print(f'Stop here!! I just train {args.train_k_fold_and_stop} fold by your set up')
                 exit()
 
-        print('Current fold = ',str(k_fold))
-        if (k_fold < args.start_from_fold) and (args.start_from_fold != 0): 
+        if (k_fold < args.start_from_fold) and (args.start_from_fold != 0):
+            print(f'Skip fold-{k_fold}')
             continue
+        else:
+            print('Current fold = ',str(k_fold))
+
         trainloader, valloader = set_up_training_for_cross_validation(train_ids,val_ids,X_,y_)
         model, optimizer, loss_fn, device, scaler = set_up_training(first_epoch)
 
@@ -46,6 +49,7 @@ def cross_validate():
         saved_output_gt_train_path = os.path.join("/mnt/data_lab513/dhsang/output","trial_" + args.trial,"train","fold_" + str(k_fold) + "_gt" + ".pt")
         saved_output_pred_evaluate_path = os.path.join("/mnt/data_lab513/dhsang/output","trial_" + args.trial,"evaluate","fold_" + str(k_fold) + "_pred" + ".pt")
         saved_output_gt_evaluate_path = os.path.join("/mnt/data_lab513/dhsang/output","trial_" + args.trial,"evaluate","fold_" + str(k_fold) + "_gt" + ".pt")
+        
         best_acc = 0
         pred_full_train_save = []
         gt_full_train_save = []
@@ -54,16 +58,17 @@ def cross_validate():
 
         for epoch in range(args.n_epochs):
 
-            print('Current epoch = ',str(epoch))
-
             if epoch == args.start_from_epoch:
                 first_epoch = False
 
             if (epoch < args.start_from_epoch) and (args.start_from_epoch != 0) and (first_epoch == True):
+                print(f'Skip epoch-{epoch}')
                 continue
+            else:
+                print('Current epoch = ',str(epoch))
 
             ### TRAIN
-            acc_train,loss_train, prec_train, recall_train, f1_train,auc_train,report_train,bal_acc_train,acc_each_class_train,lr,out_gt_train,out_pred_train,sensitivity,specificity =  epoch_train(trainloader,model,loss_fn,device,optimizer,scaler,args.use_meta,args.max_norm)
+            acc_train,loss_train, prec_train, recall_train, f1_train,auc_train,report_train,bal_acc_train,acc_each_class_train,lr,out_gt_train,out_pred_train,sensitivity,specificity =  epoch_train(trainloader,model,loss_fn,device,optimizer,scaler,args.use_meta,args.max_norm,args.use_focal_loss)
 
             pred_full_train_save.append(out_pred_train)
             gt_full_train_save.append(out_gt_train)
@@ -149,7 +154,7 @@ def cross_validate():
             writer_fold.add_scalar("learning_rate", lr, epoch)
 
             ### EVALUATE
-            acc_test,loss_test, prec_test, recall_test, f1_test,auc_test,report_test,bal_acc_test,acc_each_class_test,top_2_acc,top_3_acc,top_4_acc,top_5_acc,out_gt_eval,out_pred_eval,top_2_accuracy_score_inclass,top_3_accuracy_score_inclass,sensitivity,specificity =  epoch_evaluate(valloader,model,loss_fn,device,args.use_meta)
+            acc_test,loss_test, prec_test, recall_test, f1_test,auc_test,report_test,bal_acc_test,acc_each_class_test,top_2_acc,top_3_acc,top_4_acc,top_5_acc,out_gt_eval,out_pred_eval,top_2_accuracy_score_inclass,top_3_accuracy_score_inclass,sensitivity,specificity =  epoch_evaluate(valloader,model,loss_fn,device,args.use_meta,args.use_focal_loss)
 
             pred_full_evaluate_save.append(out_pred_eval)
             gt_full_evaluate_save.append(out_gt_eval)
@@ -349,7 +354,10 @@ def set_up_training(first_epoch=False):
         raise ValueError("Wrong choose cuda within set_up_training")
 
     scaler =  torch.cuda.amp.grad_scaler.GradScaler()
-    loss_fn = nn.CrossEntropyLoss() #TODO: del .to(device)
+    if args.use_focal_loss:
+        loss_fn = FocalLoss(alpha=torch.tensor([1.27207642,0.35948761,1.95462601,2.28142684,7.49160579,10.34271054,25.67281511,27.17666202,0.23944637]),gamma=args.fl_gamma).to(device)
+    else:
+        loss_fn = nn.CrossEntropyLoss(torch.tensor([7.0,0.2,5.0,5.0,5.0,10.0,10.0,10.0,0.1])).to(device) #TODO: del .to(device)
     model.to(device)
     if (args.start_from_epoch) != 0 and (first_epoch == True) and (args.start_from_fold !=0):
         print('Skip fold and epoch')
@@ -398,6 +406,7 @@ if __name__ == '__main__':
     if args.ignore_warnings:
         warnings.filterwarnings("ignore")
     os.makedirs(args.log_dir, exist_ok=True)
+    print('trial:',args.trial)
     print('SEED:',args.seed)
     set_seed(args.seed)
     cross_validate()

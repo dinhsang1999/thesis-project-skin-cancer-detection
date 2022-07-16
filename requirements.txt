@@ -1,13 +1,10 @@
 albumentations==1.2.0
-matplotlib==3.5.2
+focal_loss==0.0.7
+focal_loss_torch==0.0.9
 numpy==1.22.4
+opencv_python_headless==4.6.0.66
 pandas==1.4.2
-Pillow==9.1.1
-requests==2.28.0
 scikit_learn==1.1.1
-seaborn==0.11.2
-streamlit_cropper==0.2.0
-streamlit_lottie==0.0.3
 timm==0.5.4
 torch==1.11.0
 torchvision==0.12.0
